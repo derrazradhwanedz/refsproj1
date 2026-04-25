@@ -1,0 +1,17 @@
+# Search / query filters for `src/search.py` (arXiv API).
+# Edit this file to tune prose queries (`text_to_arxiv_query`) without changing Python.
+
+arxiv:
+  # Prefix for each keyword in built queries (official arXiv field: all, ti, au, …)
+  field_prefix: "all:"
+  # Boolean joiners between clauses — must include leading/trailing spaces.
+  # Do not use "+" here; HTTP clients encode "+" as %2B and arXiv returns 0 hits.
+  join_and: " AND "
+  join_or: " OR "
+
+# Words dropped when building queries from long prose (lowercase match).
+stopwords: |
+  the and for are but not you all can was one our out day get has him his how its may new
+  now old see two way who did let put say she too use that with from this have been than
+  into such some what when each other will more also most only same over under both then
+  must any your proposed fit describe submit research oct sep dec jan mar jun jul per each .

@@ -1,0 +1,260 @@
+**v.1.0.0**
+
+# refsproj1 — Multi-API BibTeX tools
+
+
+Fetch BibTeX from [arXiv](https://arxiv.org/), [Crossref](https://www.crossref.org/), or [Semantic Scholar](https://www.semanticscholar.org/) and optionally annotate Markdown with numbered citations.
+
+**Commands**
+
+| Command | Purpose |
+|---------|---------|
+| **`bulk`** | API search → one `.bib` or many (split by title, optional session folder). Supports arXiv, Crossref, Semantic Scholar, or **all** (merged). |
+| **`match`** | Fuzzy title search → pick one hit → one `.bib`. Choose your API with `--api`. |
+| **`smart`** | Chunk a `.md` file → search per chunk → `[1][2]…` in text + `## References` + optional BibTeX. Multi-API support. |
+
+**Run:** `python app.py …` from `refsproj1`, or `app.bat …` on Windows. Python must resolve the `src` package (run from project root or set `PYTHONPATH`).
+
+---
+
+## Table of contents
+
+1. [Setup](#setup)  
+2. [Project layout](#project-layout)  
+3. [Global options & logging](#global-options--logging)  
+4. [`bulk`](#command-bulk)  
+5. [`match`](#command-match)  
+6. [`smart`](#command-smart-markdown--inline-citations)  
+7. [Windows `app.bat`](#windows-appbat)  
+8. [Help](#discover-options-quickly)  
+9. [arXiv etiquette](#arxiv-etiquette)  
+10. [License](#license)
+
+---
+
+## Setup
+
+```bash
+pip install -r requirements.txt
+```
+
+Dependencies: `requests`, `feedparser` (see `requirements.txt`).
+
+### Environment variables
+
+| Variable | Purpose |
+|----------|---------|
+| `ARXIV_CONTACT_EMAIL` | Included in `User-Agent` (recommended by arXiv). |
+| `ARXIV_REQUEST_DELAY` | Seconds between HTTP calls for arXiv (default `3.0`). |
+| `CROSSREF_REQUEST_DELAY` | Seconds between HTTP calls for Crossref (default `0.5`). |
+| `SEMANTIC_SCHOLAR_REQUEST_DELAY` | Seconds between HTTP calls for Semantic Scholar (default `1.0`). |
+| `REFSPROJ_LOG_LEVEL` | Default log level if you omit `--log-level`. |
+| `REFSPROJ_LOG_CONFIG` | Path to a custom logging `fileConfig` INI (overrides built-in file setup when used). |
+
+---
+
+## Project layout
+
+| Path | Role |
+|------|------|
+| `app.py` | CLI entry. |
+| `app.bat` | Windows launcher (`cd` to script dir, `python app.py %*`). |
+| `src/` | `search`, `bibtex`, `md_smart`, `ref_logging`, `config`. |
+| `refs/` | Default output for relative `.bib` / `.md` paths. |
+| `logs/app.log` | Rotating log (with built-in logging config). |
+| `logging.conf` | Optional INI; if it contains `[sections]`, it is loaded from project root. |
+
+Relative **output** paths (`-o`) are resolved under **`refs/`** unless you pass an **absolute** path. **`..`** is rejected in relative paths.
+
+---
+
+## Global options & logging
+
+Place **before** the subcommand: `bulk`, `match`, or `smart`.
+
+| Flag | Meaning |
+|------|---------|
+| `-v`, `--verbose` | Console logging at **DEBUG**. |
+| `--log-level` | e.g. `INFO`, `WARNING`, `DEBUG`. |
+| `--no-log-file` | Stderr only when using the **built-in** dict config (see note below). |
+
+**Built-in logging:** stderr + rotating **`logs/app.log`** (about 1 MB × 5 backups).
+
+**Note:** If `logging.conf` in the project root defines real INI sections, `fileConfig` runs first; `--no-log-file` may not remove handlers defined only in that file.
+
+```bash
+python app.py -v bulk -q 'all:transformer' -n 3
+python app.py --log-level DEBUG match -t "attention is all you need" -y
+python app.py --no-log-file bulk -q 'cat:cs.CL' -n 5
+python app.py -v smart notes.md -o cited.md
+```
+
+---
+
+## Command: `bulk`
+
+```bash
+python app.py bulk --help
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-q`, `--query` | *(required)* | Search query. For arXiv, use `all:keywords`, `ti:title`, etc. For others, plain keywords. |
+| `-n`, `--max-results` | `50` | Max papers (fetched in pages up to 100). |
+| `-o`, `--output` | `arxiv_references.bib` | Output path; split mode uses its **parent** as the folder for per-paper files. |
+| `--split` | off | One `.bib` per paper; **filename from sanitized title** (duplicates → id suffix). |
+| `--session` | off | With `--split`, write under **`YYYYMMDD_HHMMSS/`** inside that parent. |
+| `--sort-by` | `submittedDate` | e.g. `relevance`, `lastUpdatedDate`. |
+| `--sort-order` | `descending` | `ascending` or `descending`. |
+| `--api` | `arxiv` | `arxiv`, `crossref`, `semantic_scholar`, or `all` (merges & deduplicates). |
+
+**Split output directory**
+
+- `-o out.bib --split` → files in **`refs/`** (parent of `refs/out.bib`).
+- `-o batch/run.bib --split` → **`refs/batch/`**.
+- `--split --session` → **`refs/<timestamp>/`** (or `refs/batch/<timestamp>/` when parent is `refs/batch`).
+
+```bash
+python app.py bulk -q 'cat:cs.CL AND all:survey' -n 20
+python app.py bulk -q 'all:"large language model"' -n 15 -o llm_survey.bib
+python app.py bulk -q 'ti:diffusion' -n 10 --sort-by relevance --sort-order ascending
+python app.py bulk -q 'cat:cs.LG' -n 10 -o run.bib --split
+python app.py bulk -q 'cat:cs.CL' -n 10 -o run.bib --split --session
+python app.py bulk -q 'all:water' -n 5 -o mybatch/export.bib --split
+python app.py -v bulk -q 'all:electron' -n 3 -o test.bib
+
+# Multi-API examples
+python app.py bulk -q "machine learning" --api crossref -n 20
+python app.py bulk -q "transformer" --api semantic_scholar -n 10
+python app.py bulk -q "neural network" --api all -n 30  # Merged results
+```
+
+**Query syntax by API:**
+- **arXiv**: `all:keywords`, `ti:words`, `au:name`, `cat:cs.CL`, combined with `AND`. See [arXiv API manual](https://info.arxiv.org/help/api/user-manual.html).
+- **Crossref/Semantic Scholar**: Plain keyword phrases work best.
+- **PowerShell**: Use single quotes where possible; quoting differs from bash.
+
+---
+
+## Command: `match`
+
+```bash
+python app.py match --help
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-t`, `--title` | *(empty)* | Title substring; required unless `-i`. |
+| `-n`, `--max-results` | `100` | Candidate pool before fuzzy ranking. |
+| `-o`, `--output` | `paper_citation.bib` | Output `.bib` under `refs/` if relative. |
+| `--pick` | `1` | 1-based rank after sort. |
+| `--min-similarity` | `0.6` | Abort below this unless `-y` or interactive confirm. |
+| `-y`, `--yes` | off | Skip similarity guard. |
+| `-i`, `--interactive` | off | Prompts for title, rank, low-similarity confirm. |
+| `--api` | `arxiv` | `arxiv`, `crossref`, or `semantic_scholar`. |
+
+```bash
+python app.py match -t "Attention Is All You Need"
+python app.py match -t "rough title guess" -y
+python app.py match -t "BERT pretraining" --pick 2 -o bert_hit.bib
+python app.py match -t "diffusion models" -n 200 --min-similarity 0.75 -y
+python app.py match -i
+python app.py -v match -t "graph neural network" -y -o gnn.bib
+
+# Use different APIs
+python app.py match -t "climate change" --api crossref
+python app.py match -t "attention mechanism" --api semantic_scholar
+```
+
+---
+
+## Command: `smart` (Markdown + inline citations)
+
+```bash
+python app.py smart --help
+```
+
+1. Reads **`input_md`** (tries **current working directory**, then **`refsproj1/`** if the path is relative and not found).
+2. Strips optional **`---` … `---`** front matter from chunking; **re-emits it unchanged** at the top of the output.
+3. Splits the **body** by **`--chunk-by`**: **`sentences`** (default) splits **per line** first, then sentences inside each line (handles `**Sentence.** **Next**`); **`paragraphs`** splits on blank lines. **`--chunk-n`** groups that many units into one search.
+4. For each chunk: builds an `all:` keyword query (OR by default; see `src/filters.yaml`) from up to **`--query-words`** terms, searches arXiv with **`relevance`**, keeps **`--refs-per-chunk`** hits.
+5. Assigns global **`[1]`, `[2]`, …**; same arXiv id → same number everywhere.
+6. Appends citation markers **after** each chunk. **Paragraph** mode joins chunks with blank lines; **sentence** mode joins with spaces **within** each line so tables stay on one row.
+7. Writes **`--output`** (default `refs/cited.md`).
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `input_md` | *(required)* | Source Markdown path. |
+| `-o`, `--output` | `cited.md` | Output `.md` (relative → `refs/`). |
+| `--chunk-by` | `sentences` | `sentences` (default) or `paragraphs`. |
+| `--chunk-n` | `1` | Group this many paragraphs or sentences per chunk. |
+| `--refs-per-chunk` | `1` | Max references appended per chunk (`[1][2]…`). |
+| `--query-words` | `8` | Max keywords per chunk for the search query. |
+| `--ref-format` | `simple` | Reference block style (see below). |
+| `--bibtex` | `none` | `none` \| `combined` \| `split`. |
+| `--bibtex-output` | *(stem of `-o`)* | Path for **combined** `.bib` (relative → `refs/`). |
+| `--api` | `arxiv` | `arxiv`, `crossref`, `semantic_scholar`, or `all` (merged). |
+
+**`--ref-format`**
+
+- **`simple`** — `[n] Title — URL`
+- **`numbered`** — authors, year, source:id, URL (e.g., `arXiv:2401.12345`, `DOI:10.xxx`)
+- **`links`** — Markdown link on title + id in backticks
+- **`compact`** — `[n] title [id](url)`
+
+**`--bibtex`**
+
+- **`combined`** — one `.bib` (default: same stem as `-o`, e.g., `lit_review.md` → `lit_review.bib`).
+- **`split`** — `refs/<output_stem>_bib/<id>.bib` per paper (id varies by source: arXiv ID, DOI, or S2 paper ID).
+- **`none`** — no BibTeX files.
+
+```bash
+python app.py smart notes.md
+python app.py smart draft.md -o lit_review.md --chunk-n 2 --refs-per-chunk 2
+python app.py smart paper.md -o paper_cited.md --chunk-by sentences --chunk-n 3 --refs-per-chunk 2
+python app.py smart chapter.md -o lit_review.md --ref-format numbered --bibtex combined
+python app.py smart chapter.md -o lit_review.md --bibtex split
+python app.py smart chapter.md -o out.md --bibtex combined --bibtex-output myrefs.bib
+python app.py -v smart notes.md --query-words 5 -o cited.md
+
+# Multi-API smart citations
+python app.py smart notes.md --api crossref --refs-per-chunk 2
+python app.py smart notes.md --api semantic_scholar --chunk-n 2
+python app.py smart notes.md --api all --refs-per-chunk 3 --bibtex combined
+```
+
+**Limitations:** Search is **keyword-based**, not semantic; verify hits. Large files mean **many** HTTP calls (respect rate limits via `*_REQUEST_DELAY` env vars). Treat output as a **draft**.
+
+---
+
+## Windows: `app.bat`
+
+```bat
+cd /d D:\SAMs\refsproj1
+app.bat bulk -q "cat:cs.CL" -n 5 -o out.bib
+app.bat match -t "my paper title" -y
+app.bat smart mynotes.md -o cited.md --refs-per-chunk 2
+```
+
+---
+
+## Discover options quickly
+
+```bash
+python app.py --help
+python app.py bulk --help
+python app.py match --help
+python app.py smart --help
+```
+
+---
+
+## arXiv etiquette
+
+Use a clear **User-Agent** with contact info (`ARXIV_CONTACT_EMAIL`). Space requests per [API guidance](https://info.arxiv.org/help/api/user-manual.html); the default delay reduces load on arXiv servers.
+
+---
+
+## License
+
+See `LICENSE`.
