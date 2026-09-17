@@ -402,14 +402,20 @@ def _arxiv_to_entry(entry: Any) -> PaperEntry:
     else:
         aid = eid.rsplit("/", 1)[-1]
     title = getattr(entry, "title", "").replace("\n", " ").strip()
-    authors = getattr(entry, "author", "N/A")
+    # Extract all authors from feedparser entry
+    authors_list = getattr(entry, "authors", []) or []
+    if authors_list:
+        author_names = [a.get("name", "") for a in authors_list if a.get("name")]
+        authors = ", ".join(author_names) if author_names else "N/A"
+    else:
+        authors = getattr(entry, "author", "N/A") or "N/A"
     published = getattr(entry, "published", None) or ""
     year = published[:4] if len(published) >= 4 else "?"
     url = f"https://arxiv.org/abs/{aid}"
     return PaperEntry(
         id=aid,
         title=title,
-        authors=str(authors),
+        authors=authors,
         year=year,
         url=url,
         source="arxiv",
@@ -491,6 +497,39 @@ def search_fuzzy_title_unified(
     elif api == "semantic_scholar":
         scored = search_semantic_scholar_fuzzy_title(partial_title, max_results=max_results)
         return [(score, _semantic_scholar_to_entry(e)) for score, e in scored]
+    elif api == "all":
+        # Search all APIs by fuzzy title and merge results
+        all_scored: List[Tuple[float, PaperEntry]] = []
+        # arXiv
+        try:
+            arxiv_scored = search_fuzzy_title(partial_title, max_results=max_results)
+            all_scored.extend([(s, _arxiv_to_entry(e)) for s, e in arxiv_scored])
+            _log.info("arXiv fuzzy title returned %s entries", len(arxiv_scored))
+        except Exception as e:
+            _log.warning("arXiv fuzzy title search failed: %s", e)
+        # Crossref
+        try:
+            crossref_scored = search_crossref_fuzzy_title(partial_title, max_results=max_results)
+            all_scored.extend([(s, _crossref_to_entry(e)) for s, e in crossref_scored])
+            _log.info("Crossref fuzzy title returned %s entries", len(crossref_scored))
+        except Exception as e:
+            _log.warning("Crossref fuzzy title search failed: %s", e)
+        # Semantic Scholar
+        try:
+            s2_scored = search_semantic_scholar_fuzzy_title(partial_title, max_results=max_results)
+            all_scored.extend([(s, _semantic_scholar_to_entry(e)) for s, e in s2_scored])
+            _log.info("Semantic Scholar fuzzy title returned %s entries", len(s2_scored))
+        except Exception as e:
+            _log.warning("Semantic Scholar fuzzy title search failed: %s", e)
+        # Sort by score descending and deduplicate
+        all_scored.sort(key=lambda x: x[0], reverse=True)
+        seen_ids = set()
+        deduped = []
+        for score, entry in all_scored:
+            if entry.id not in seen_ids:
+                seen_ids.add(entry.id)
+                deduped.append((score, entry))
+        return deduped[:max_results]
     else:
         raise ValueError(f"Unknown API: {api}")
 

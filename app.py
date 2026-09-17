@@ -335,6 +335,8 @@ def cmd_smart(args: argparse.Namespace) -> int:
             bibtex_combined_path=bib_combined,
             bibtex_split_dir=bib_split,
             api=api,
+            by_title=getattr(args, "by_title", False),
+            after_year=getattr(args, "after_year", None),
         )
     except Exception as e:
         _log.exception("smart mode failed: %s", e)
@@ -493,6 +495,17 @@ def main(argv: list[str] | None = None) -> int:
         choices=("arxiv", "crossref", "semantic_scholar", "all"),
         default="arxiv",
         help="API to search per chunk: arxiv (default), crossref, semantic_scholar, or all (merges results).",
+    )
+    p_smart.add_argument(
+        "--by-title",
+        action="store_true",
+        help="Treat chunk text as a title query (fuzzy match) instead of extracting keywords.",
+    )
+    p_smart.add_argument(
+        "--after-year",
+        type=int,
+        default=None,
+        help="Only include papers published after this year.",
     )
     p_smart.set_defaults(func=cmd_smart)
 

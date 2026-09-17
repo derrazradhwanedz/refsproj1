@@ -12,6 +12,7 @@ from src.search import (
     PaperEntry,
     search_all_apis,
     search_bulk_unified,
+    search_fuzzy_title_unified,
     text_to_arxiv_query,
     text_to_query,
 )
@@ -161,8 +162,8 @@ def format_reference_line(num: int, entry: PaperEntry, style: RefFormat) -> str:
         return f"{num}. {title} ({authors}, {year}) — {source_label}:{eid} — {url}"
     if style == "compact":
         return f"[{num}] {title} [{eid}]({url})"
-    # simple
-    return f"[{num}] {title} — {url}"
+    # simple (now includes authors)
+    return f"[{num}] {authors}. {title} — {url}"
 
 
 def process_markdown_smart(
@@ -178,6 +179,8 @@ def process_markdown_smart(
     bibtex_combined_path: Path | None = None,
     bibtex_split_dir: Path | None = None,
     api: str = "arxiv",
+    by_title: bool = False,
+    after_year: int | None = None,
 ) -> tuple[Path, list[tuple[int, PaperEntry]]]:
     """
     Read ``input_path``, chunk, search per chunk, write ``output_md``.
@@ -185,6 +188,9 @@ def process_markdown_smart(
 
     Args:
         api: API to use ('arxiv', 'crossref', 'semantic_scholar', or 'all')
+        by_title: If True, search by treating chunk as title query (fuzzy match).
+                 If False, extract keywords and search (default).
+        after_year: If set, only include papers published after this year.
     """
     text = input_path.read_text(encoding="utf-8")
     prefix, body = extract_front_matter(text)
@@ -197,16 +203,26 @@ def process_markdown_smart(
     def cite_chunk(chunk: str) -> str:
         nonlocal next_n, chunk_counter
         chunk_counter += 1
-        # Use appropriate query builder based on API
-        if api == "arxiv":
+        # Use appropriate query builder based on API and search mode
+        if by_title:
+            # Use chunk text directly as title query (truncate for API limits)
+            q = chunk.strip()[:300]
+        elif api == "arxiv":
             q = text_to_arxiv_query(chunk, max_words=query_max_words)
         else:
             q = text_to_query(chunk, api=api, max_words=query_max_words)
-        _log.info("chunk %s query=%r", chunk_counter, q[:120])
+        _log.info("chunk %s query=%r (by_title=%s)", chunk_counter, q[:120], by_title)
         markers = ""
         try:
-            # Use appropriate search function based on API
-            if api == "all":
+            # Use appropriate search function based on API and mode
+            if by_title:
+                # Fuzzy title search - chunk text treated as title to match
+                hits = search_fuzzy_title_unified(
+                    q,
+                    api=api,
+                    max_results=max(refs_per_chunk * 3, 30),  # Larger pool for fuzzy ranking
+                )[:refs_per_chunk]
+            elif api == "all":
                 hits = search_all_apis(q, max_results=refs_per_chunk)
             else:
                 hits = search_bulk_unified(
@@ -220,7 +236,21 @@ def process_markdown_smart(
             hits = []
 
         cite_nums: list[int] = []
-        for ent in hits:
+        for hit in hits:
+            # Handle both (score, entry) tuples from fuzzy search and direct entries
+            if isinstance(hit, tuple) and len(hit) == 2:
+                ent = hit[1]  # Unpack (score, entry)
+            else:
+                ent = hit  # Direct PaperEntry
+            # Skip if year filter is set and paper is too old
+            if after_year is not None:
+                year_str = _entry_year(ent)
+                try:
+                    year = int(year_str) if year_str and year_str != "?" else 0
+                    if year < after_year:
+                        continue  # Skip papers before the cutoff year
+                except (ValueError, TypeError):
+                    pass  # If year can't be parsed, include it anyway
             eid = _entry_id(ent)
             if eid not in id_to_num:
                 id_to_num[eid] = next_n
@@ -288,6 +318,7 @@ def process_markdown_smart(
                 _log.warning("bibtex split skip %s: %s", eid, e)
                 continue
             p = bibtex_split_dir / f"{eid.replace('/', '_')}.bib"
+            p.parent.mkdir(parents=True, exist_ok=True)  # Ensure dir exists before write
             p.write_text(
                 "% Thank you to arXiv for use of its open access interoperability.\n\n" + bib,
                 encoding="utf-8",
