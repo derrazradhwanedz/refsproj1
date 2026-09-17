@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use refsproj1, please cite it as below."
+title: "refsproj1: Multi-API BibTeX tools"
+abstract: "Fetches BibTeX records from arXiv, Crossref and Semantic Scholar and annotates Markdown with numbered citations."
+type: software
+authors:
+  - family-names: Derraz
+    given-names: Radhwane
+    email: derrazradhwanedz@gmail.com
+repository-code: "https://github.com/derrazradhwanedz/refsproj1"
+license: MIT
+version: 1.0.0

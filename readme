@@ -28,7 +28,8 @@ Fetch BibTeX from [arXiv](https://arxiv.org/), [Crossref](https://www.crossref.o
 7. [Windows `app.bat`](#windows-appbat)  
 8. [Help](#discover-options-quickly)  
 9. [arXiv etiquette](#arxiv-etiquette)  
-10. [License](#license)
+10. [Citation](#citation)  
+11. [License](#license)
 
 ---
 
@@ -255,6 +256,16 @@ Use a clear **User-Agent** with contact info (`ARXIV_CONTACT_EMAIL`). Space requ
 
 ---
 
+## Citation
+
+If you use refsproj1 in your work, please cite it:
+
+> R. Derraz, *refsproj1: Multi-API BibTeX tools*, 2026. [Online]. Available: https://github.com/derrazradhwanedz/refsproj1
+
+Citation metadata is also provided in `CITATION.cff` (GitHub's **Cite this repository** button).
+
+---
+
 ## License
 
-See `LICENSE`.
+MIT — see `LICENSE`. You are free to use, modify and redistribute the code; please keep the licence notice and cite the project.
